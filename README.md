@@ -1,91 +1,113 @@
 # Identity-Aware Sports MOT
 
-An AI-powered sports vision and tactical analysis system for turning raw game film into structured player movement data, tactical context, and coach-friendly visualizations.
+Identity-aware multi-object tracking for sideline sports footage, with a focus on reducing identity switches in dense environments such as lacrosse.
 
-The project is designed around multi-object tracking in sports footage, with a focus on maintaining player identity over time and mapping player motion into a form that can support play reconstruction, formation analysis, and tactical review.
+This project investigates a practical failure mode in modern tracking-by-detection pipelines: standard assignment-based trackers can follow motion well, but they often lose player identity when multiple athletes wear visually similar uniforms and interact under occlusion, overlap, or rapid direction changes.
 
-## Overview
+## Problem
 
-Traditional film study at the high school and amateur level is slow, manual, and difficult to scale. This project aims to automate that workflow by combining computer vision, identity-aware tracking, and field-aware spatial analysis into one pipeline.
+Assignment-based trackers such as BoT-SORT and ByteTrack depend heavily on motion cues and discriminative appearance embeddings. In team sports, those assumptions weaken quickly because many players share nearly identical visual features. As well as when players move in unpredictable ways and go over each other.
 
-The long-term goal is to process broadcast or sideline sports footage and produce:
+That creates a recurring failure pattern:
 
-- persistent player tracks across frames
-- team-level and player-level identity signals
-- field-aligned position data
-- tactical movement representations
-- visual outputs for analysis and review
+- two nearby players become difficult to distinguish
+- the tracker assigns a detection to the wrong track
+- the appearance model is updated with the wrong player
 
-While the motivating use case is lacrosse, the overall pipeline is adaptable to other field and court sports such as football and basketball.
+## Core Idea
 
-## Pipeline
+Instead of replacing the tracker with a heavier end-to-end model, this project explores a modular augmentation to the assignment step.
 
-The proposed system follows a staged vision pipeline:
+The approach is an **augmented cost matrix framework** that injects sport-specific identity signals into standard MOT association logic without requiring full tracker retraining.
 
-1. **Video ingestion**
-	Raw footage is prepared through normalization, stabilization, and frame-level preprocessing.
+Two signals drive the approach:
 
-2. **Player detection**
-	Players are localized in each frame using object detection models.
+1. **Team classification**
+	Jersey color clustering acts as a hard or near-hard constraint that discourages impossible cross-team associations.
 
-3. **Multi-object tracking**
-	Detections are linked across time to maintain persistent identities through motion, camera movement, and partial occlusion.
+2. **Jersey number recognition**
+	OCR-derived jersey numbers act as intermittent identity anchors. When a number is recognized with sufficient confidence, it strongly penalizes contradictory associations and helps recover from drift.
 
-4. **Identity understanding**
-	Players are further characterized using team classification and, where feasible, jersey number recognition.
+These are the cues people use naturally when watching sports film: color first, number when available.
 
-5. **Field mapping**
-	Video coordinates are transformed into a top-down tactical view using homography and field markings.
+## Objectives
 
-6. **Play representation**
-	Player positions and trajectories are converted into structured movement data for downstream tactical analysis.
+The project is designed to:
 
-7. **Visualization**
-	Outputs can be rendered as annotated video, top-down tracking maps, and play reconstruction views.
+- reduce identity switches in sideline sports footage
+- reduce track fragmentation in crowded or overlapping scenes
+- improve identity consistency without retraining the full tracker
 
-## Why Identity-Aware Tracking Matters
+## Research Focus
 
-Basic tracking is not enough for sports analysis. Tactical insights depend on knowing not just where motion occurred, but which player moved, how teams re-formed, and how spacing evolved over time.
+The emphasis is on evaluating whether **modular, sport-specific identity signals** can improve existing assignment-based MOT systems in a controlled and measurable way.
 
-Identity-aware tracking helps support:
+Key research questions include:
 
-- player-specific trajectory analysis
-- off-ball movement understanding
-- formation and spacing breakdowns
-- possession and transition analysis
-- cleaner downstream tactical visualizations
+- how much can team-aware constraints reduce incorrect associations?
+- when OCR signals are sparse or noisy, how much identity stability do they still provide?
+- what anchor density is required before identity accuracy improves meaningfully?
+- can lightweight domain priors outperform more architecturally complex tracking approaches in this setting?
 
-## Input Video Requirements
+## Planned Methodology
 
-For best results, the source footage should follow these guidelines:
+The intended evaluation flow is:
 
-- **Resolution:** 1080p minimum, 4K preferred
-- **Frame rate:** 30 FPS minimum, 60 FPS preferred
-- **Camera position:** elevated view, ideally behind the end zone or from a central sideline perspective
-- **Capture settings:** manual exposure and white balance when possible, with fast shutter speed to reduce motion blur
+1. Use sideline lacrosse footage from fixed elevated camera positions.
+2. Run baseline trackers such as BoT-SORT, ByteTrack, StrongSORT, or Deep OC-SORT.
+3. Inject team and jersey-based cues into the assignment cost matrix.
+4. Compare baseline and augmented variants under the same sequences.
+5. Measure both traditional MOT quality and identity-specific stability.
 
-## Current Repository Layout
+## Evaluation Metrics
+
+The project is expected to evaluate performance using common MOT metrics, including:
+
+- IDSW
+- Frag
+- IDF1
+- HOTA
+
+In addition, the work proposes analyzing **anchor density versus identity accuracy** as a task-specific axis for understanding how often reliable identity cues must appear to keep tracks stable.
+
+## Data Scope
+
+The primary target domain is:
+
+- sideline lacrosse footage
+- fixed elevated camera setups
+- real game conditions with overlap, occlusion, and similar uniforms
+
+Although the initial focus is lacrosse, the framework is meant to generalize to other sports where appearance ambiguity makes identity persistence difficult.
+
+## Why This Matters
+
+Sports analysis depends on player identity, not just motion. A tracker that preserves position but loses identity becomes much less useful for tactical review, player-level analysis, or sequence reconstruction.
+
+By improving the temporal duration of correct identity assignments, the system can support more reliable downstream analytics without requiring a fully bespoke tracking model from scratch.
+
+## Repository Layout
 
 ```text
 .
 ├── configs/       # Configuration files
-├── data/          # Datasets or intermediate artifacts
-├── experiments/   # Small runnable experiments and prototypes
-├── notebooks/     # Exploration and analysis notebooks
-├── paper/         # Paper-related assets
+├── data/          # Data assets and intermediate outputs
+├── experiments/   # Prototypes and small runnable experiments
+├── notebooks/     # Analysis notebooks
+├── paper/         # Paper or manuscript-related assets
 ├── scripts/       # Utility scripts
-├── src/           # Core package source
-├── tests/         # Test package
-├── Dockerfile     # Container entrypoint
+├── src/           # Core source package
+├── tests/         # Tests
+├── Dockerfile     # Container definition
 ├── Makefile       # Convenience commands
 └── README.md
 ```
 
-At the moment, the repository is still in an early scaffold state. The current Docker entrypoint runs a simple example script in `experiments/test.py`.
+The repository is currently in an early scaffold stage. The present Docker entrypoint runs a simple example script while the tracking pipeline is still being built out.
 
-## Getting Started
+## Quick Start
 
-### Run with Docker
+### Docker
 
 Build the image:
 
@@ -99,36 +121,32 @@ Run the container:
 docker run --rm identity-aware-sports-mot
 ```
 
-### Run with Make
+### Make
 
-If you have `make` available in your shell:
+If `make` is available in your shell:
 
 ```bash
 make build
 make run
 ```
 
-Or run both in one step:
+Or build and run in one step:
 
 ```bash
 make test
 ```
 
-## Current Status
 
-This repository currently contains the project scaffold and an initial Docker-based execution path. The full vision pipeline described above is the target system architecture and roadmap direction, rather than a complete implementation already present in the codebase.
+## Next Steps
 
-## Roadmap
+Near-term development is likely to focus on:
 
-Planned areas of development include:
+- baseline detector and tracker integration
+- team classification from jersey appearance
+- OCR-based jersey number extraction
+- cost-matrix augmentation experiments
+- benchmark evaluation against standard MOT baselines
 
-- baseline player detection for sports footage
-- robust multi-object tracking under occlusion and motion
-- team and jersey-based identity classification
-- field homography and top-down tactical projection
-- structured play and movement representation
-- interactive visualization and analysis tooling
+## Summary
 
-## Vision
-
-The project is aimed at making advanced sports film analysis more accessible by reducing manual review time and producing clearer tactical insight from ordinary game video.
+Identity-aware sports MOT is a focused attempt to make tracking-by-detection more reliable in team sports by adding the same cues that humans use instinctively: team color and jersey number. The project’s main claim is that these lightweight signals can meaningfully improve identity stability in assignment-based trackers without demanding a complete redesign of the underlying MOT system.
